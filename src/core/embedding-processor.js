@@ -1,8 +1,6 @@
-import fs from 'fs-extra'; // Ensure fs-extra is imported for file operations
-import { env } from '@xenova/transformers'; // Import env for model caching configuration
-import { pipeline } from '@xenova/transformers'; // Import pipeline for feature extraction
-import os from 'os';
-import path from 'path';
+const fs = require('fs-extra');
+const os = require('os');
+const path = require('path');
 
 class EmbeddingProcessor {
   constructor(options = {}) {
@@ -10,9 +8,18 @@ class EmbeddingProcessor {
     this.maxTokens = options.maxTokens || 512;
     this.overlap = options.overlap || 50;
     this.pipeline = null;
+    this.transformers = null;
     
     // Configure Xenova to use external model directory
     this.setupModelCache();
+  }
+
+  async loadTransformers() {
+    if (!this.transformers) {
+      // Dynamic import for ES module
+      this.transformers = await import('@xenova/transformers');
+    }
+    return this.transformers;
   }
 
   setupModelCache() {
@@ -21,11 +28,6 @@ class EmbeddingProcessor {
     
     // Ensure the cache directory exists
     fs.ensureDirSync(modelCacheDir);
-    
-    // Configure Xenova to use external cache
-    env.cacheDir = modelCacheDir;
-    env.allowLocalModels = true;
-    env.allowRemoteModels = true;
     
     console.log(`📁 Model cache directory: ${modelCacheDir}`);
   }
@@ -38,6 +40,15 @@ class EmbeddingProcessor {
     try {
       console.log(`🔄 Loading embedding model: ${this.model}`);
       console.log('📦 Model will be downloaded to external cache on first use');
+      
+      // Load transformers dynamically
+      const { pipeline, env } = await this.loadTransformers();
+      
+      // Configure Xenova to use external cache
+      const modelCacheDir = path.join(os.homedir(), '.context-provider', 'models');
+      env.cacheDir = modelCacheDir;
+      env.allowLocalModels = true;
+      env.allowRemoteModels = true;
       
       // Create feature extraction pipeline
       this.pipeline = await pipeline('feature-extraction', this.model, {
