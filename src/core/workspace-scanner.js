@@ -1,6 +1,6 @@
 const fs = require('fs-extra');
 const path = require('path');
-const glob = require('glob');
+const { glob } = require('glob');
 const ignore = require('ignore');
 const mime = require('mime-types');
 
@@ -123,20 +123,17 @@ class WorkspaceScanner {
   }
 
   async findFiles(pattern) {
-    return new Promise((resolve, reject) => {
-      glob(pattern, {
+    try {
+      const files = await glob(pattern, {
         cwd: this.workspacePath,
         absolute: true,
         nodir: true,
         dot: false
-      }, (error, files) => {
-        if (error) {
-          reject(error);
-        } else {
-          resolve(files);
-        }
       });
-    });
+      return files;
+    } catch (error) {
+      throw new Error(`Failed to find files: ${error.message}`);
+    }
   }
 
   isBinaryContent(content) {
