@@ -1,7 +1,8 @@
-const { pipeline, env } = require('@xenova/transformers');
-const fs = require('fs-extra');
-const path = require('path');
-const os = require('os');
+import fs from 'fs-extra'; // Ensure fs-extra is imported for file operations
+import { env } from '@xenova/transformers'; // Import env for model caching configuration
+import { pipeline } from '@xenova/transformers'; // Import pipeline for feature extraction
+import os from 'os';
+import path from 'path';
 
 class EmbeddingProcessor {
   constructor(options = {}) {
