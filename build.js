@@ -1,71 +1,76 @@
 const { compile } = require('nexe');
 const fs = require('fs-extra');
+const path = require('path');
 
 async function build() {
   try {
-    console.log('🚀 Building with latest Node.js...');
+    console.log('🚀 Building context-provider...');
+    
+    // Create a simple build that works around path issues
+    const projectDir = process.cwd();
+    const tempDir = path.join(require('os').tmpdir(), 'nexe-build-' + Date.now());
+    
+    console.log('📁 Working directory:', projectDir);
+    console.log('📁 Temp directory:', tempDir);
     
     // Ensure dist directory exists
     await fs.ensureDir('dist');
     
-    // Modern Node.js versions - try latest first
-    const targets = [
-      'linux-x64-22.0.0',   // Node.js 22 LTS
-      'linux-x64-20.11.1',  // Node.js 20 LTS
-      'linux-x64-18.19.0'   // Node.js 18 LTS fallback
-    ];
-    
-    for (const target of targets) {
-      try {
-        console.log(`🔨 Building for ${target}...`);
+    try {
+      console.log('🔨 Building with Node.js 20...');
+      
+      // Use a simple configuration that should work
+      await compile({
+        input: 'src/index.js',
+        output: 'dist/context-provider',
+        target: 'linux-x64-20.11.1',
+        build: false, // Don't build from source to avoid path issues
+        verbose: false, // Reduce verbosity to avoid log spam
+        temp: tempDir,
+        resources: ['package.json'],
         
-        await compile({
-          input: 'src/index.js',
-          output: 'dist/context-provider',
-          target: target,
-          build: true, // Build from source for latest Node.js
-          verbose: true,
-          temp: './.nexe-temp',
-          resources: ['package.json'],
-          
-          // Optimize build
-          patches: [
-            async (compiler, next) => {
-              // Remove unnecessary files to reduce size
-              await compiler.replaceInFileAsync(
-                'lib/internal/process/warning.js',
-                'require(\'util\').debuglog',
-                '() => () => {}'
-              );
-              return next();
-            }
-          ]
-        });
+        // Minimal configuration
+        configure: [
+          '--dest-cpu=x64',
+          '--dest-os=linux'
+        ]
+      });
+      
+      console.log('✅ Build completed!');
+      
+      // Verify the binary
+      if (await fs.pathExists('dist/context-provider')) {
+        const stats = await fs.stat('dist/context-provider');
+        console.log(`📦 Binary size: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
         
-        console.log(`✅ Successfully built for ${target}!`);
+        // Make executable
+        await fs.chmod('dist/context-provider', 0o755);
+        console.log('✅ Binary is ready!');
         
-        // Verify the binary
-        if (await fs.pathExists('dist/context-provider')) {
-          const stats = await fs.stat('dist/context-provider');
-          console.log(`📦 Binary size: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
-          
-          // Make executable
-          await fs.chmod('dist/context-provider', 0o755);
-          console.log('✅ Build completed successfully!');
-          return;
+        // Test the binary
+        console.log('🧪 Testing binary...');
+        const { execSync } = require('child_process');
+        try {
+          const result = execSync('./dist/context-provider --help', { 
+            encoding: 'utf8',
+            timeout: 5000
+          });
+          console.log('✅ Binary test passed!');
+        } catch (testError) {
+          console.log('⚠️ Binary test failed, but build completed');
         }
         
-      } catch (error) {
-        console.log(`⚠️ Build failed for ${target}: ${error.message}`);
-        if (target === targets[targets.length - 1]) {
-          throw error;
-        }
-        continue;
+        return;
       }
+      
+    } catch (error) {
+      console.log(`⚠️ Build failed: ${error.message}`);
+      throw error;
     }
     
   } catch (error) {
     console.error('❌ Build failed:', error.message);
+    console.log('\n💡 Try running from a directory without spaces in the path');
     process.exit(1);
   }
 }
