@@ -11,6 +11,7 @@
     "dev": "node src/index.js",
     "build": "echo '❌ Build disabled on local machine. Use GitHub Actions for deployment.'",
     "build:ci": "node build.js",
+    "build:optimized": "node build-ultra-optimized.js",
     "test": "node src/index.js --help",
     "test:local": "node test-local.js"
   },
@@ -40,10 +41,22 @@
   },
   "nexe": {
     "target": "linux-x64-18.17.0",
-    "build": true,
+    "build": false,
     "output": "dist/context-provider",
+    "cache": "~/.nexe",
+    "temp": "./.nexe-temp",
     "excludes": [
-      "node_modules/@xenova/transformers/dist/models/**/*"
+      "node_modules/@xenova/transformers/dist/models/**/*",
+      "node_modules/@xenova/transformers/models/**/*",
+      "node_modules/**/*.md",
+      "node_modules/**/*.txt",
+      "node_modules/**/README*",
+      "node_modules/**/test/**/*",
+      "node_modules/**/tests/**/*",
+      "node_modules/**/docs/**/*"
+    ],
+    "resources": [
+      "package.json"
     ]
   }
 }

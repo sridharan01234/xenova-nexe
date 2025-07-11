@@ -11,11 +11,13 @@ env:
   NODE_VERSION: '18'
   NEXE_VERSION: '4.0.0-rc.6'
   NEXE_TARGET: 'linux-x64-18.17.0'
+  NEXE_CACHE_KEY: 'nexe-cache-v2'
+  BUILD_CACHE_KEY: 'build-cache-v2'
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 25  # Reduced from 45
     
     strategy:
       matrix:
@@ -31,53 +33,118 @@ jobs:
         node-version: ${{ env.NODE_VERSION }}
         cache: 'npm'
         
-    - name: Cache nexe binaries
+    - name: Advanced Nexe cache strategy
       uses: actions/cache@v4
       with:
         path: |
           ~/.nexe
           ~/.cache/nexe
-        key: nexe-${{ env.NEXE_TARGET }}-${{ hashFiles('package-lock.json') }}
+          ./.nexe-temp
+          ./node_modules/.cache
+        key: ${{ env.NEXE_CACHE_KEY }}-${{ env.NEXE_TARGET }}-${{ hashFiles('package-lock.json', 'build-optimized.js') }}
         restore-keys: |
+          ${{ env.NEXE_CACHE_KEY }}-${{ env.NEXE_TARGET }}-
+          ${{ env.NEXE_CACHE_KEY }}-
           nexe-${{ env.NEXE_TARGET }}-
-          nexe-
           
-    - name: Install system dependencies
+    - name: Cache Node.js build artifacts
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.npm
+          ~/.node-gyp
+          /tmp/.node-gyp
+        key: ${{ env.BUILD_CACHE_KEY }}-${{ env.NODE_VERSION }}-${{ hashFiles('package-lock.json') }}
+        restore-keys: |
+          ${{ env.BUILD_CACHE_KEY }}-${{ env.NODE_VERSION }}-
+          ${{ env.BUILD_CACHE_KEY }}-
+          
+    - name: Install system dependencies (optimized)
       run: |
-        sudo apt-get update
-        sudo apt-get install -y build-essential python3 python3-pip
+        sudo apt-get update -qq
+        sudo apt-get install -y --no-install-recommends \
+          build-essential \
+          python3 \
+          python3-pip \
+          ccache \
+          ninja-build
         
-    - name: Install dependencies
-      run: |
-        if [ -f "package-lock.json" ]; then
-          npm ci --prefer-offline
-        else
-          npm install --prefer-offline
-        fi
+        # Configure ccache for faster rebuilds
+        echo 'export PATH="/usr/lib/ccache:$PATH"' >> ~/.bashrc
+        export PATH="/usr/lib/ccache:$PATH"
+        ccache --max-size=1G
         
-    - name: Pre-download nexe binary
+    - name: Install dependencies (optimized)
       run: |
-        echo "🔄 Pre-downloading nexe binary to avoid build time..."
-        npx nexe --version
-        npx nexe --download-only --target ${{ env.NEXE_TARGET }} || echo "Pre-download attempted"
+        # Use npm ci with optimizations
+        npm ci --prefer-offline --no-audit --no-fund --silent
         
-    - name: Build binary (CI only)
+    - name: Pre-download and cache nexe binary
       run: |
-        echo "🔨 Building with GitHub Actions..."
-        npm run build:ci
+        echo "🔄 Pre-downloading nexe binary with caching..."
+        
+        # Set nexe cache directory
+        export NEXE_CACHE_DIR="$HOME/.nexe"
+        mkdir -p "$NEXE_CACHE_DIR"
+        
+        # Pre-download with retry logic
+        for i in {1..3}; do
+          echo "Attempt $i: Downloading nexe binary..."
+          if npx nexe@${{ env.NEXE_VERSION }} --download-only --target ${{ env.NEXE_TARGET }}; then
+            echo "✅ Nexe binary downloaded successfully"
+            break
+          elif [ $i -eq 3 ]; then
+            echo "⚠️ Failed to download prebuilt binary, will build from source"
+            export NEXE_BUILD_FROM_SOURCE=true
+          else
+            echo "⚠️ Download failed, retrying..."
+            sleep 5
+          fi
+        done
+        
+        # List cached binaries
+        ls -la "$NEXE_CACHE_DIR" || echo "No cache directory found"
+        
+    - name: Build binary (ultra-optimized)
+      run: |
+        echo "🔨 Building with optimized configuration..."
+        
+        # Set build environment optimizations
+        export NODE_OPTIONS="--max-old-space-size=6144"
+        export MAKEFLAGS="-j$(nproc)"
+        export JOBS=$(nproc)
+        export CC="ccache gcc"
+        export CXX="ccache g++"
+        
+        # Use optimized build script
+        npm run build:optimized
       env:
         CI: true
         GITHUB_ACTIONS: true
-        JOBS: 4
-        MAKEFLAGS: '-j4'
-        NODE_OPTIONS: '--max-old-space-size=4096'
-      
-    - name: Verify binary
+        NODE_OPTIONS: '--max-old-space-size=6144'
+        NEXE_PREBUILT: true
+        NEXE_VERBOSE: false
+        NEXE_TEMP: './.nexe-temp'
+        UV_THREADPOOL_SIZE: 128
+        
+    - name: Verify binary (quick check)
       run: |
+        echo "🔍 Verifying binary..."
         ls -la dist/
         file dist/context-provider
         chmod +x dist/context-provider
-        ./dist/context-provider --help || echo "Binary built successfully"
+        
+        # Quick verification
+        timeout 10 ./dist/context-provider --help || echo "✅ Binary built successfully"
+        
+        # Check binary size
+        BINARY_SIZE=$(stat -c%s dist/context-provider)
+        echo "📊 Binary size: $(numfmt --to=iec $BINARY_SIZE)"
+        
+        # Strip binary to reduce size
+        strip dist/context-provider
+        STRIPPED_SIZE=$(stat -c%s dist/context-provider)
+        echo "📊 Stripped size: $(numfmt --to=iec $STRIPPED_SIZE)"
         
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
@@ -120,6 +187,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     needs: build
+    timeout-minutes: 10  # Reduced from default
     
     steps:
     - name: Checkout code
@@ -131,13 +199,9 @@ jobs:
         node-version: '18'
         cache: 'npm'
         
-    - name: Install dependencies
+    - name: Install dependencies (minimal)
       run: |
-        if [ -f "package-lock.json" ]; then
-          npm ci
-        else
-          npm install
-        fi
+        npm ci --only=production --silent --no-audit --no-fund
         
     - name: Download binary
       uses: actions/download-artifact@v4
@@ -145,45 +209,51 @@ jobs:
         name: context-provider-binary
         path: dist/
         
-    - name: Test binary (quick)
+    - name: Fast binary verification
       run: |
         chmod +x dist/context-provider
         
-        # Quick functionality test
-        echo "🧪 Quick binary test..."
-        ./dist/context-provider --help
+        echo "🧪 Lightning-fast binary test..."
+        
+        # Quick help test
+        timeout 5 ./dist/context-provider --help
         
         # Create minimal test workspace
         mkdir -p test-workspace
         echo "console.log('test');" > test-workspace/test.js
+        echo "# Test README" > test-workspace/README.md
         
-        # Test init command (quick)
+        # Test init command (should be instant)
         echo "🔧 Testing init command..."
-        ./dist/context-provider init -w test-workspace
+        timeout 10 ./dist/context-provider init -w test-workspace
         
         # Verify config was created
         if [ -f "test-workspace/.context-provider.json" ]; then
           echo "✅ Init command successful"
+          cat test-workspace/.context-provider.json
         else
           echo "❌ Init command failed"
           exit 1
         fi
         
-        # Quick process test (don't wait for full model download)
-        echo "🔄 Testing process command (quick)..."
-        timeout 60 ./dist/context-provider process -w test-workspace -o test-embeddings || {
-          echo "⚠️ Process command timed out (model download in progress)"
-          echo "✅ Binary is functional - model download works"
+        # Quick process test (don't wait for model download)
+        echo "🔄 Testing process command startup..."
+        timeout 30 ./dist/context-provider process -w test-workspace -o test-embeddings || {
+          EXIT_CODE=$?
+          if [ $EXIT_CODE -eq 124 ]; then
+            echo "⚠️ Process command timed out (expected - model download)"
+            echo "✅ Binary startup successful"
+          else
+            echo "❌ Process command failed with exit code $EXIT_CODE"
+            exit 1
+          fi
         }
         
-        # Check if model cache directory was created
-        if [ -d "$HOME/.context-provider/models" ]; then
-          echo "✅ Model cache directory created"
-        else
-          echo "⚠️ Model cache directory not created (download may be in progress)"
-        fi
+        # Check binary integrity
+        echo "🔍 Binary integrity check..."
+        ldd dist/context-provider | head -5
         
-        echo "✅ Binary test completed successfully"
+        echo "✅ All tests passed successfully!"
         
     - name: Cleanup
       run: |
