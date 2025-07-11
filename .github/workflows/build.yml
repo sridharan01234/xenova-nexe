@@ -9,15 +9,15 @@ on:
 
 env:
   NODE_VERSION: '18'
-  NEXE_VERSION: '4.0.0-rc.6'
+  NEXE_VERSION: '4.0.0-beta.19'
   NEXE_TARGET: 'linux-x64-18.17.0'
-  NEXE_CACHE_KEY: 'nexe-cache-v2'
-  BUILD_CACHE_KEY: 'build-cache-v2'
+  NEXE_CACHE_KEY: 'nexe-cache-v3'
+  BUILD_CACHE_KEY: 'build-cache-v3'
 
 jobs:
   build:
     runs-on: ubuntu-latest
-        
+
     strategy:
       matrix:
         node-version: [18]
@@ -80,26 +80,23 @@ jobs:
         
     - name: Pre-download and cache nexe binary
       run: |
-        echo "🔄 Pre-downloading nexe binary with caching..."
+        echo "🔄 Preparing nexe for build from source..."
         
         # Set nexe cache directory
         export NEXE_CACHE_DIR="$HOME/.nexe"
         mkdir -p "$NEXE_CACHE_DIR"
         
-        # Pre-download with retry logic
-        for i in {1..3}; do
-          echo "Attempt $i: Downloading nexe binary..."
-          if npx nexe@${{ env.NEXE_VERSION }} --download-only --target ${{ env.NEXE_TARGET }}; then
-            echo "✅ Nexe binary downloaded successfully"
-            break
-          elif [ $i -eq 3 ]; then
-            echo "⚠️ Failed to download prebuilt binary, will build from source"
-            export NEXE_BUILD_FROM_SOURCE=true
-          else
-            echo "⚠️ Download failed, retrying..."
-            sleep 5
-          fi
-        done
+        # Check if prebuilt binary exists (quick check)
+        echo "🔍 Checking for prebuilt binary availability..."
+        PREBUILT_URL="https://github.com/nexe/nexe/releases/download/v${{ env.NEXE_VERSION }}/${{ env.NEXE_TARGET }}"
+        
+        if curl --head --silent --fail "$PREBUILT_URL" >/dev/null 2>&1; then
+          echo "✅ Prebuilt binary available, downloading..."
+          npx nexe@${{ env.NEXE_VERSION }} --download-only --target ${{ env.NEXE_TARGET }}
+        else
+          echo "⚠️ Prebuilt binary not available for ${{ env.NEXE_VERSION }}, will build from source"
+          echo "NEXE_BUILD_FROM_SOURCE=true" >> $GITHUB_ENV
+        fi
         
         # List cached binaries
         ls -la "$NEXE_CACHE_DIR" || echo "No cache directory found"
@@ -115,13 +112,18 @@ jobs:
         export CC="ccache gcc"
         export CXX="ccache g++"
         
+        # Force build from source if prebuilt not available
+        if [ "$NEXE_BUILD_FROM_SOURCE" = "true" ]; then
+          echo "🔧 Forcing build from source..."
+          export NEXE_FORCE_BUILD=true
+        fi
+        
         # Use optimized build script
         npm run build:optimized
       env:
         CI: true
         GITHUB_ACTIONS: true
         NODE_OPTIONS: '--max-old-space-size=6144'
-        NEXE_PREBUILT: true
         NEXE_VERBOSE: false
         NEXE_TEMP: './.nexe-temp'
         UV_THREADPOOL_SIZE: 128

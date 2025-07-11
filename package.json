@@ -12,6 +12,7 @@
     "build": "echo '❌ Build disabled on local machine. Use GitHub Actions for deployment.'",
     "build:ci": "node build.js",
     "build:optimized": "node build-ultra-optimized.js",
+    "build:test": "node test-build.js",
     "test": "node src/index.js --help",
     "test:local": "node test-local.js"
   },
@@ -34,7 +35,7 @@
     "path": "^0.12.7"
   },
   "devDependencies": {
-    "nexe": "^4.0.0-rc.6"
+    "nexe": "^4.0.0-beta.19"
   },
   "engines": {
     "node": ">=18.0.0"

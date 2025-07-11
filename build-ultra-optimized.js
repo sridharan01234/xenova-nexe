@@ -9,7 +9,7 @@ async function buildExecutable() {
     
     // Environment detection
     const isCI = process.env.CI === 'true' || process.env.GITHUB_ACTIONS === 'true';
-    const usePrebuilt = process.env.NEXE_PREBUILT === 'true';
+    const forceBuild = process.env.NEXE_FORCE_BUILD === 'true' || process.env.NEXE_BUILD_FROM_SOURCE === 'true';
     const verbose = process.env.NEXE_VERBOSE === 'true';
     const tempDir = process.env.NEXE_TEMP || path.join(__dirname, '.nexe-temp');
     
@@ -132,7 +132,7 @@ async function buildExecutable() {
     
     console.log('⚙️ Ultra-optimized configuration:');
     console.log(`   Target: ${nexeConfig.target}`);
-    console.log(`   Strategy: ${usePrebuilt ? 'Prebuilt preferred' : 'Build from source'}`);
+    console.log(`   Strategy: ${forceBuild ? 'Build from source (forced)' : 'Prebuilt preferred'}`);
     console.log(`   Temp dir: ${tempDir}`);
     console.log(`   Cache: ${nexeConfig.cache}`);
     console.log(`   CPU cores: ${cpuCount}`);
@@ -140,14 +140,8 @@ async function buildExecutable() {
     
     const startTime = Date.now();
     
-    try {
-      console.log('🔄 Phase 1: Attempting prebuilt binary...');
-      nexeConfig.build = false;
-      await compile(nexeConfig);
-      console.log('✅ SUCCESS: Used prebuilt binary!');
-      
-    } catch (error) {
-      console.log('⚠️ Phase 2: Prebuilt failed, building from source...');
+    if (forceBuild) {
+      console.log('🔄 Building from source (forced)...');
       console.log('   This may take 5-15 minutes depending on cache...');
       
       // Enhanced build configuration
@@ -161,13 +155,44 @@ async function buildExecutable() {
         console.error('❌ Build from source failed:', buildError.message);
         
         // Last resort: minimal build
-        console.log('🔄 Phase 3: Attempting minimal build...');
+        console.log('🔄 Phase 2: Attempting minimal build...');
         nexeConfig.excludes = []; // Remove all excludes
         nexeConfig.resources = []; // Remove all resources
         nexeConfig.patches = []; // Remove all patches
         
         await compile(nexeConfig);
         console.log('✅ SUCCESS: Minimal build completed!');
+      }
+    } else {
+      try {
+        console.log('🔄 Phase 1: Attempting prebuilt binary...');
+        nexeConfig.build = false;
+        await compile(nexeConfig);
+        console.log('✅ SUCCESS: Used prebuilt binary!');
+        
+      } catch (error) {
+        console.log('⚠️ Phase 2: Prebuilt failed, building from source...');
+        console.log('   This may take 5-15 minutes depending on cache...');
+        
+        // Enhanced build configuration
+        nexeConfig.build = true;
+        nexeConfig.verbose = true; // Enable verbose for build phase
+        
+        try {
+          await compile(nexeConfig);
+          console.log('✅ SUCCESS: Built from source!');
+        } catch (buildError) {
+          console.error('❌ Build from source failed:', buildError.message);
+          
+          // Last resort: minimal build
+          console.log('🔄 Phase 3: Attempting minimal build...');
+          nexeConfig.excludes = []; // Remove all excludes
+          nexeConfig.resources = []; // Remove all resources
+          nexeConfig.patches = []; // Remove all patches
+          
+          await compile(nexeConfig);
+          console.log('✅ SUCCESS: Minimal build completed!');
+        }
       }
     }
     
