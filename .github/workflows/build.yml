@@ -17,8 +17,7 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 25  # Reduced from 45
-    
+        
     strategy:
       matrix:
         node-version: [18]
