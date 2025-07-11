@@ -9,12 +9,10 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node src/index.js",
-    "build": "node build.js",
-    "build:force": "NEXE_BUILD=true node build.js",
-    "build:win": "nexe src/index.js -o dist/context-provider.exe -t windows-x64-18.17.0 --build",
-    "build:mac": "nexe src/index.js -o dist/context-provider-mac -t macos-x64-18.17.0 --build",
-    "build:all": "npm run build:force && npm run build:win && npm run build:mac",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "echo '❌ Build disabled on local machine. Use GitHub Actions for deployment.'",
+    "build:ci": "node build.js",
+    "test": "node src/index.js --help",
+    "test:local": "node test-local.js"
   },
   "keywords": [
     "cli",
