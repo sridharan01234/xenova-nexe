@@ -8,11 +8,11 @@ on:
     branches: [ main ]
 
 env:
-  NODE_VERSION: '18'
-  NEXE_VERSION: '4.0.0-beta.19'
-  NEXE_TARGET: 'linux-x64-18.0.0'
-  NEXE_CACHE_KEY: 'nexe-cache-v4'
-  BUILD_CACHE_KEY: 'build-cache-v4'
+  NODE_VERSION: '20'
+  NEXE_VERSION: '5.0.0-beta.4'
+  NEXE_TARGET: 'linux-x64-20.11.1'
+  NEXE_CACHE_KEY: 'nexe-cache-v5'
+  BUILD_CACHE_KEY: 'build-cache-v5'
 
 jobs:
   build:
@@ -20,7 +20,7 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [18]
+        node-version: [20]
     
     steps:
     - name: Checkout code
@@ -96,97 +96,21 @@ jobs:
         
         echo "✅ Environment validation passed!"
         
-    - name: Pre-download and cache nexe binary
+    - name: Build binary
       run: |
-        echo "🔄 Preparing nexe for build from source..."
-        
-        # Set nexe cache directory
-        export NEXE_CACHE_DIR="$HOME/.nexe"
-        mkdir -p "$NEXE_CACHE_DIR"
-        
-        # Check if prebuilt binary exists (quick check)
-        echo "🔍 Checking for prebuilt binary availability..."
-        PREBUILT_URL="https://github.com/nexe/nexe/releases/download/v${{ env.NEXE_VERSION }}/${{ env.NEXE_TARGET }}"
-        
-        if curl --head --silent --fail "$PREBUILT_URL" >/dev/null 2>&1; then
-          echo "✅ Prebuilt binary available, downloading..."
-          npx nexe@${{ env.NEXE_VERSION }} --download-only --target ${{ env.NEXE_TARGET }}
-        else
-          echo "⚠️ Prebuilt binary not available for ${{ env.NEXE_VERSION }}, will build from source"
-          echo "NEXE_BUILD_FROM_SOURCE=true" >> $GITHUB_ENV
-        fi
-        
-        # List cached binaries
-        ls -la "$NEXE_CACHE_DIR" || echo "No cache directory found"
-        
-    - name: Build debug binary (for troubleshooting)
-      run: |
-        echo "🔧 Building debug binary for troubleshooting..."
-        npm run build:debug
-        
-        if [ -f "dist/context-provider-debug" ]; then
-          echo "✅ Debug binary created!"
-          chmod +x dist/context-provider-debug
-          
-          # Test debug binary
-          echo "🧪 Testing debug binary..."
-          timeout 10 ./dist/context-provider-debug --help 2>&1 | head -20
-        else
-          echo "❌ Debug binary not created"
-        fi
-        
-    - name: Build binary (ultra-optimized)
-      run: |
-        echo "🔨 Building with optimized configuration..."
-        
-        # Set build environment optimizations
-        export NODE_OPTIONS="--max-old-space-size=6144"
-        export MAKEFLAGS="-j$(nproc)"
-        export JOBS=$(nproc)
-        export CC="ccache gcc"
-        export CXX="ccache g++"
-        
-        # Force build from source if prebuilt not available
-        if [ "$NEXE_BUILD_FROM_SOURCE" = "true" ]; then
-          echo "🔧 Forcing build from source..."
-          export NEXE_FORCE_BUILD=true
-        fi
-        
-        # Debug: Check if source file exists
-        echo "🔍 Checking source files..."
-        ls -la src/
-        node -e "console.log('Node.js version:', process.version)"
-        
-        # Try simple build first
-        echo "🔧 Starting with simple build process..."
-        npm run build:optimized || {
-          echo "⚠️ Simple build failed, trying ultra-optimized..."
-          npm run build:ultra || {
-            echo "⚠️ Ultra-optimized build failed, trying manual build..."
-            
-            # Manual nexe build as last resort
-            echo "🔧 Attempting manual nexe build..."
-            npx nexe src/index.js --target ${{ env.NEXE_TARGET }} --output dist/context-provider --verbose || {
-              echo "⚠️ Manual build failed, trying with build flag..."
-              npx nexe src/index.js --build --target ${{ env.NEXE_TARGET }} --output dist/context-provider --verbose
-            }
-          }
-        }
+        echo "🔨 Building with latest Node.js..."
+        npm run build
         
         # Verify the binary was created
         if [ ! -f "dist/context-provider" ]; then
-          echo "❌ Binary not created, build failed completely"
+          echo "❌ Binary not created, build failed"
           exit 1
         fi
         
         echo "✅ Binary created successfully!"
       env:
         CI: true
-        GITHUB_ACTIONS: true
-        NODE_OPTIONS: '--max-old-space-size=6144'
-        NEXE_VERBOSE: true
-        NEXE_TEMP: './.nexe-temp'
-        UV_THREADPOOL_SIZE: 128
+        NODE_OPTIONS: '--max-old-space-size=8192'
         
     - name: Verify binary (quick check)
       run: |

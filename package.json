@@ -9,14 +9,8 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node src/index.js",
-    "build": "echo '❌ Build disabled on local machine. Use GitHub Actions for deployment.'",
-    "build:ci": "node build.js",
-    "build:optimized": "node build-simple.js",
-    "build:ultra": "node build-ultra-optimized.js",
-    "build:debug": "node build-debug.js",
-    "build:test": "node test-build.js",
-    "test": "node src/index.js --help",
-    "test:local": "node test-local.js"
+    "build": "node build.js",
+    "test": "node src/index.js --help"
   },
   "keywords": [
     "cli",
@@ -31,33 +25,22 @@
     "@xenova/transformers": "^2.17.2",
     "commander": "^11.1.0",
     "fs-extra": "^11.2.0",
-    "glob": "^10.3.10",
+    "glob": "^8.1.0",
     "ignore": "^5.3.0",
     "mime-types": "^2.1.35",
     "path": "^0.12.7"
   },
   "devDependencies": {
-    "nexe": "^4.0.0-beta.19"
+    "nexe": "^5.0.0-beta.4"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.0.0"
   },
   "nexe": {
-    "target": "linux-x64-18.0.0",
-    "build": false,
+    "target": "linux-x64-20.11.1",
+    "build": true,
     "output": "dist/context-provider",
-    "cache": "~/.nexe",
     "temp": "./.nexe-temp",
-    "excludes": [
-      "node_modules/@xenova/transformers/dist/models/**/*",
-      "node_modules/@xenova/transformers/models/**/*",
-      "node_modules/**/*.md",
-      "node_modules/**/*.txt",
-      "node_modules/**/README*",
-      "node_modules/**/test/**/*",
-      "node_modules/**/tests/**/*",
-      "node_modules/**/docs/**/*"
-    ],
     "resources": [
       "package.json"
     ]
