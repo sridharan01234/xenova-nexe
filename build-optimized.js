@@ -2,6 +2,23 @@ const { compile } = require('nexe');
 const fs = require('fs-extra');
 const path = require('path');
 
+// Helper function to find the best available Node.js version
+function getBestNodeVersion() {
+  // Common Node.js versions that are likely to have prebuilt binaries
+  const commonVersions = [
+    'linux-x64-20.17.0',
+    'linux-x64-20.0.0',
+    'linux-x64-16.20.0',
+    'linux-x64-14.21.3',
+    'linux-x64-18.0.0',
+    'linux-x64-16.0.0',
+    'linux-x64-14.0.0'
+  ];
+  
+  // Return the first one as default, nexe will fallback if not available
+  return commonVersions[0];
+}
+
 async function buildExecutable() {
   try {
     console.log('🔧 Building context-provider executable...');
@@ -18,7 +35,7 @@ async function buildExecutable() {
     const nexeConfig = {
       input: 'src/index.js',
       output: 'dist/context-provider',
-      target: 'linux-x64-18.17.0',
+      target: getBestNodeVersion(), // Use helper function to get best version
       build: false, // Start with prebuilt
       
       // Performance optimizations
@@ -82,7 +99,7 @@ async function buildExecutable() {
     console.log(`   Build strategy: ${usePrebuilt ? 'Prebuilt only' : forceBuild ? 'Build from source' : 'Prebuilt first, fallback to build'}`);
     console.log('   External models: Models will be downloaded to ~/.context-provider/models');
     
-    // Smart build strategy
+    // Smart build strategy with better error handling
     if (usePrebuilt) {
       console.log('🔄 Using prebuilt binary only...');
       nexeConfig.build = false;
@@ -91,6 +108,7 @@ async function buildExecutable() {
     } else if (forceBuild) {
       console.log('🔄 Building from source (forced)...');
       console.log('⏱️  This will take 10-20 minutes...');
+      nexeConfig.build = true;
       await compile(nexeConfig);
       console.log('✅ Successfully built from source!');
     } else {
@@ -115,8 +133,24 @@ async function buildExecutable() {
           nexeConfig.make = [`-j${process.env.JOBS}`];
         }
         
-        await compile(nexeConfig);
-        console.log('✅ Successfully built from source!');
+        try {
+          await compile(nexeConfig);
+          console.log('✅ Successfully built from source!');
+        } catch (buildError) {
+          console.log('⚠️ Build from source failed, trying alternative Node.js version...');
+          
+          // Try with a different Node.js version
+          nexeConfig.target = 'linux-x64-14.21.3';
+          try {
+            await compile(nexeConfig);
+            console.log('✅ Successfully built with alternative Node.js version!');
+          } catch (altError) {
+            console.log('⚠️ Alternative version failed, trying latest stable...');
+            nexeConfig.target = 'linux-x64-18.0.0';
+            await compile(nexeConfig);
+            console.log('✅ Successfully built with latest stable Node.js!');
+          }
+        }
       }
     }
     
