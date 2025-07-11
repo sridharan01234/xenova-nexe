@@ -11,7 +11,9 @@
     "dev": "node src/index.js",
     "build": "echo '❌ Build disabled on local machine. Use GitHub Actions for deployment.'",
     "build:ci": "node build.js",
-    "build:optimized": "node build-ultra-optimized.js",
+    "build:optimized": "node build-simple.js",
+    "build:ultra": "node build-ultra-optimized.js",
+    "build:debug": "node build-debug.js",
     "build:test": "node test-build.js",
     "test": "node src/index.js --help",
     "test:local": "node test-local.js"
@@ -41,7 +43,7 @@
     "node": ">=18.0.0"
   },
   "nexe": {
-    "target": "linux-x64-18.17.0",
+    "target": "linux-x64-18.0.0",
     "build": false,
     "output": "dist/context-provider",
     "cache": "~/.nexe",

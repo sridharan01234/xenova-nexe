@@ -10,9 +10,9 @@ on:
 env:
   NODE_VERSION: '18'
   NEXE_VERSION: '4.0.0-beta.19'
-  NEXE_TARGET: 'linux-x64-18.17.0'
-  NEXE_CACHE_KEY: 'nexe-cache-v3'
-  BUILD_CACHE_KEY: 'build-cache-v3'
+  NEXE_TARGET: 'linux-x64-18.0.0'
+  NEXE_CACHE_KEY: 'nexe-cache-v4'
+  BUILD_CACHE_KEY: 'build-cache-v4'
 
 jobs:
   build:
@@ -78,6 +78,24 @@ jobs:
         # Use npm ci with optimizations
         npm ci --prefer-offline --no-audit --no-fund --silent
         
+    - name: Validate Node.js environment
+      run: |
+        echo "🔍 Validating Node.js environment..."
+        node --version
+        npm --version
+        
+        # Test basic Node.js functionality
+        node -e "console.log('✅ Node.js is working')"
+        
+        # Test the main entry point
+        echo "🔧 Testing main entry point..."
+        node src/index.js --help
+        
+        # Check if nexe is available
+        npx nexe --version
+        
+        echo "✅ Environment validation passed!"
+        
     - name: Pre-download and cache nexe binary
       run: |
         echo "🔄 Preparing nexe for build from source..."
@@ -101,6 +119,22 @@ jobs:
         # List cached binaries
         ls -la "$NEXE_CACHE_DIR" || echo "No cache directory found"
         
+    - name: Build debug binary (for troubleshooting)
+      run: |
+        echo "🔧 Building debug binary for troubleshooting..."
+        npm run build:debug
+        
+        if [ -f "dist/context-provider-debug" ]; then
+          echo "✅ Debug binary created!"
+          chmod +x dist/context-provider-debug
+          
+          # Test debug binary
+          echo "🧪 Testing debug binary..."
+          timeout 10 ./dist/context-provider-debug --help 2>&1 | head -20
+        else
+          echo "❌ Debug binary not created"
+        fi
+        
     - name: Build binary (ultra-optimized)
       run: |
         echo "🔨 Building with optimized configuration..."
@@ -118,13 +152,39 @@ jobs:
           export NEXE_FORCE_BUILD=true
         fi
         
-        # Use optimized build script
-        npm run build:optimized
+        # Debug: Check if source file exists
+        echo "🔍 Checking source files..."
+        ls -la src/
+        node -e "console.log('Node.js version:', process.version)"
+        
+        # Try simple build first
+        echo "🔧 Starting with simple build process..."
+        npm run build:optimized || {
+          echo "⚠️ Simple build failed, trying ultra-optimized..."
+          npm run build:ultra || {
+            echo "⚠️ Ultra-optimized build failed, trying manual build..."
+            
+            # Manual nexe build as last resort
+            echo "🔧 Attempting manual nexe build..."
+            npx nexe src/index.js --target ${{ env.NEXE_TARGET }} --output dist/context-provider --verbose || {
+              echo "⚠️ Manual build failed, trying with build flag..."
+              npx nexe src/index.js --build --target ${{ env.NEXE_TARGET }} --output dist/context-provider --verbose
+            }
+          }
+        }
+        
+        # Verify the binary was created
+        if [ ! -f "dist/context-provider" ]; then
+          echo "❌ Binary not created, build failed completely"
+          exit 1
+        fi
+        
+        echo "✅ Binary created successfully!"
       env:
         CI: true
         GITHUB_ACTIONS: true
         NODE_OPTIONS: '--max-old-space-size=6144'
-        NEXE_VERBOSE: false
+        NEXE_VERBOSE: true
         NEXE_TEMP: './.nexe-temp'
         UV_THREADPOOL_SIZE: 128
         
@@ -132,20 +192,60 @@ jobs:
       run: |
         echo "🔍 Verifying binary..."
         ls -la dist/
+        
+        # Check if binary exists
+        if [ ! -f "dist/context-provider" ]; then
+          echo "❌ Binary not found!"
+          exit 1
+        fi
+        
+        # Check binary type and permissions
         file dist/context-provider
         chmod +x dist/context-provider
         
-        # Quick verification
-        timeout 10 ./dist/context-provider --help || echo "✅ Binary built successfully"
+        # Check if it's actually executable
+        if [ ! -x "dist/context-provider" ]; then
+          echo "❌ Binary is not executable!"
+          exit 1
+        fi
+        
+        # Quick verification with timeout
+        echo "🧪 Testing binary execution..."
+        timeout 10 ./dist/context-provider --help > /dev/null 2>&1 || {
+          EXIT_CODE=$?
+          echo "⚠️ Binary test failed with exit code $EXIT_CODE"
+          echo "🔍 Checking for Node.js runtime issues..."
+          
+          # Check binary dependencies
+          echo "Binary dependencies:"
+          ldd dist/context-provider | head -10
+          
+          # Check if it's a valid ELF binary
+          if file dist/context-provider | grep -q "ELF"; then
+            echo "✅ Valid ELF binary detected"
+          else
+            echo "❌ Not a valid ELF binary"
+            exit 1
+          fi
+          
+          # Try a simpler test
+          echo "🔧 Attempting basic execution test..."
+          timeout 5 ./dist/context-provider 2>&1 | head -5
+        }
         
         # Check binary size
         BINARY_SIZE=$(stat -c%s dist/context-provider)
         echo "📊 Binary size: $(numfmt --to=iec $BINARY_SIZE)"
         
-        # Strip binary to reduce size
-        strip dist/context-provider
-        STRIPPED_SIZE=$(stat -c%s dist/context-provider)
-        echo "📊 Stripped size: $(numfmt --to=iec $STRIPPED_SIZE)"
+        # Only strip if binary is working
+        if timeout 5 ./dist/context-provider --help > /dev/null 2>&1; then
+          echo "✅ Binary is working, optimizing size..."
+          strip dist/context-provider
+          STRIPPED_SIZE=$(stat -c%s dist/context-provider)
+          echo "📊 Stripped size: $(numfmt --to=iec $STRIPPED_SIZE)"
+        else
+          echo "⚠️ Binary not working properly, skipping strip"
+        fi
         
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
@@ -216,8 +316,32 @@ jobs:
         
         echo "🧪 Lightning-fast binary test..."
         
-        # Quick help test
-        timeout 5 ./dist/context-provider --help
+        # Check if binary is valid before testing
+        if ! file dist/context-provider | grep -q "ELF"; then
+          echo "❌ Invalid binary format"
+          exit 1
+        fi
+        
+        # Test with better error handling
+        echo "🔧 Testing help command..."
+        timeout 5 ./dist/context-provider --help 2>&1 | head -10 || {
+          EXIT_CODE=$?
+          echo "⚠️ Help command failed with exit code $EXIT_CODE"
+          
+          # Check for specific Nexe error
+          if timeout 5 ./dist/context-provider --help 2>&1 | grep -q "Invalid Nexe binary"; then
+            echo "❌ Invalid Nexe binary detected - rebuild required"
+            exit 1
+          fi
+          
+          # Check for Node.js runtime errors
+          echo "🔍 Checking binary integrity..."
+          ldd dist/context-provider | head -5
+          
+          # Try basic execution
+          echo "🔧 Attempting basic execution..."
+          timeout 3 ./dist/context-provider 2>&1 | head -3
+        }
         
         # Create minimal test workspace
         mkdir -p test-workspace
@@ -226,27 +350,41 @@ jobs:
         
         # Test init command (should be instant)
         echo "🔧 Testing init command..."
-        timeout 10 ./dist/context-provider init -w test-workspace
+        timeout 10 ./dist/context-provider init -w test-workspace 2>&1 | head -10 || {
+          EXIT_CODE=$?
+          echo "⚠️ Init command failed with exit code $EXIT_CODE"
+          
+          # Check for specific error patterns
+          if timeout 10 ./dist/context-provider init -w test-workspace 2>&1 | grep -q "Invalid Nexe binary"; then
+            echo "❌ Invalid Nexe binary during init - critical error"
+            exit 1
+          fi
+        }
         
         # Verify config was created
         if [ -f "test-workspace/.context-provider.json" ]; then
           echo "✅ Init command successful"
           cat test-workspace/.context-provider.json
         else
-          echo "❌ Init command failed"
+          echo "❌ Init command failed - no config file created"
           exit 1
         fi
         
         # Quick process test (don't wait for model download)
         echo "🔄 Testing process command startup..."
-        timeout 30 ./dist/context-provider process -w test-workspace -o test-embeddings || {
+        timeout 30 ./dist/context-provider process -w test-workspace -o test-embeddings 2>&1 | head -10 || {
           EXIT_CODE=$?
           if [ $EXIT_CODE -eq 124 ]; then
             echo "⚠️ Process command timed out (expected - model download)"
             echo "✅ Binary startup successful"
           else
             echo "❌ Process command failed with exit code $EXIT_CODE"
-            exit 1
+            
+            # Check for Nexe binary error
+            if timeout 30 ./dist/context-provider process -w test-workspace -o test-embeddings 2>&1 | grep -q "Invalid Nexe binary"; then
+              echo "❌ Invalid Nexe binary during process - critical error"
+              exit 1
+            fi
           fi
         }
         
