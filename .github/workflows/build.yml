@@ -8,11 +8,11 @@ on:
     branches: [ main ]
 
 env:
-  NODE_VERSION: '20'
+  NODE_VERSION: '22'
   NEXE_VERSION: '5.0.0-beta.4'
-  NEXE_TARGET: 'linux-x64-20.11.1'
-  NEXE_CACHE_KEY: 'nexe-cache-v5'
-  BUILD_CACHE_KEY: 'build-cache-v5'
+  NEXE_TARGET: 'linux-x64-22.11.0'
+  NEXE_CACHE_KEY: 'nexe-cache-v6'
+  BUILD_CACHE_KEY: 'build-cache-v6'
 
 jobs:
   build:
@@ -20,7 +20,7 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [20]
+        node-version: [22]
     
     steps:
     - name: Checkout code

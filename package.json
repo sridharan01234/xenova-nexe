@@ -35,10 +35,10 @@
     "nexe": "^5.0.0-beta.4"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.0.0"
   },
   "nexe": {
-    "target": "linux-x64-20.11.1",
+    "target": "linux-x64-22.11.0",
     "build": true,
     "output": "dist/context-provider",
     "temp": "./.nexe-temp",

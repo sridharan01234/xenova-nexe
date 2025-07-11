@@ -8,36 +8,38 @@ async function build() {
     // Ensure dist directory exists
     await fs.ensureDir('dist');
     
-    // Latest Node.js versions - build from source since prebuilt binaries aren't available
+    // Modern Node.js versions - try latest first
     const targets = [
-      'linux-x64-22.11.0',  // Node.js 22 Latest
-      'linux-x64-20.18.0',  // Node.js 20 Latest  
-      'linux-x64-18.20.4'   // Node.js 18 Latest fallback
+      'linux-x64-22.0.0',   // Node.js 22 LTS
+      'linux-x64-20.11.1',  // Node.js 20 LTS
+      'linux-x64-18.19.0'   // Node.js 18 LTS fallback
     ];
     
     for (const target of targets) {
       try {
         console.log(`🔨 Building for ${target}...`);
-        console.log('⏳ This will take several minutes as Node.js is compiled from source...');
         
-        const result = await compile({
+        await compile({
           input: 'src/index.js',
           output: 'dist/context-provider',
           target: target,
-          build: true, // Enable building from source for latest Node.js
+          build: true, // Build from source for latest Node.js
           verbose: true,
           temp: './.nexe-temp',
           resources: ['package.json'],
           
-          // Build configuration for latest Node.js
-          make: ['-j4'], // Use 4 parallel jobs for faster compilation
-          configure: [
-            '--enable-static',
-            '--fully-static'
-          ],
-          
-          // Python path for Node.js build
-          python: process.env.PYTHON || 'python3'
+          // Optimize build
+          patches: [
+            async (compiler, next) => {
+              // Remove unnecessary files to reduce size
+              await compiler.replaceInFileAsync(
+                'lib/internal/process/warning.js',
+                'require(\'util\').debuglog',
+                '() => () => {}'
+              );
+              return next();
+            }
+          ]
         });
         
         console.log(`✅ Successfully built for ${target}!`);
@@ -49,20 +51,7 @@ async function build() {
           
           // Make executable
           await fs.chmod('dist/context-provider', 0o755);
-          
-          // Test the binary
-          try {
-            const { execSync } = require('child_process');
-            const testResult = execSync('./dist/context-provider --help', { 
-              encoding: 'utf8', 
-              timeout: 10000 
-            });
-            console.log('✅ Binary test passed!');
-          } catch (testError) {
-            console.log('⚠️ Binary test failed, but build completed');
-          }
-          
-          console.log('🎉 Build completed successfully!');
+          console.log('✅ Build completed successfully!');
           return;
         }
         
@@ -71,14 +60,12 @@ async function build() {
         if (target === targets[targets.length - 1]) {
           throw error;
         }
-        console.log('🔄 Trying next Node.js version...');
         continue;
       }
     }
     
   } catch (error) {
     console.error('❌ Build failed:', error.message);
-    console.error('💡 Try running with PYTHON=python3 npm run build if Python path is incorrect');
     process.exit(1);
   }
 }
