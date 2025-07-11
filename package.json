@@ -10,6 +10,7 @@
     "start": "node src/index.js",
     "dev": "node src/index.js",
     "build": "node build.js",
+    "build-wrapper": "node build-wrapper.js",
     "test": "node src/index.js --help"
   },
   "keywords": [
